@@ -63,6 +63,7 @@ jobs:
             "--width", "1200",
             "--height", "780",
             "--new-window",
+            "--force-internal-navigation",
             "--targets", "x64"
           )
 
