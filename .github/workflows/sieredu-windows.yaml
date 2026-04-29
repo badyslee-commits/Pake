@@ -54,10 +54,11 @@ jobs:
         timeout-minutes: 25
         shell: pwsh
         run: |
-          $appName = "斯尔教育"
+          $appName = "SierEdu"
           $args = @(
             "https://www.sieredu.com/",
             "--name", $appName,
+            "--title", "斯尔教育",
             "--identifier", "com.sieredu.app",
             "--width", "1200",
             "--height", "780",
