@@ -1,0 +1,110 @@
+name: Build SierEdu Windows App
+
+env:
+  NODE_VERSION: "22"
+  PNPM_VERSION: "10.26.2"
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/sieredu-windows.yaml"
+      - ".github/actions/setup-env/action.yml"
+      - "bin/**"
+      - "src-tauri/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+
+jobs:
+  build-windows:
+    name: SierEdu Windows
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable-x86_64-msvc
+
+      - name: Setup Node.js Environment
+        uses: ./.github/actions/setup-env
+        with:
+          mode: build
+
+      - name: Build CLI
+        run: pnpm run cli:build
+
+      - name: Rust cache restore
+        uses: actions/cache/restore@v4.2.0
+        id: cache_store
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            src-tauri/target/
+          key: ${{ runner.os }}-cargo-pake-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Build SierEdu Windows MSI
+        timeout-minutes: 25
+        shell: pwsh
+        run: |
+          $appName = "斯尔教育"
+          $args = @(
+            "https://www.sieredu.com/",
+            "--name", $appName,
+            "--identifier", "com.sieredu.app",
+            "--width", "1200",
+            "--height", "780",
+            "--new-window",
+            "--targets", "x64"
+          )
+
+          Write-Host "Running: node dist/cli.js $($args -join ' ')"
+          node dist/cli.js $args
+
+          New-Item -Path "output\windows" -ItemType Directory -Force
+
+          if (Test-Path "$appName.msi") {
+            Move-Item -Path "$appName.msi" -Destination "output\windows\SierEdu_x64.msi" -Force
+          } else {
+            $msiFiles = Get-ChildItem -Path "src-tauri\target\x86_64-pc-windows-msvc\release\bundle\msi\*.msi" -ErrorAction SilentlyContinue
+
+            if (-not $msiFiles) {
+              $msiFiles = Get-ChildItem -Path "src-tauri\target\release\bundle\msi\*.msi" -ErrorAction SilentlyContinue
+            }
+
+            if ($msiFiles) {
+              Move-Item -Path $msiFiles[0].FullName -Destination "output\windows\SierEdu_x64.msi" -Force
+            } else {
+              Write-Error "No MSI files found in expected locations"
+              Get-ChildItem -Path "src-tauri\target\" -Recurse -Name "*.msi" -ErrorAction SilentlyContinue | Write-Host
+              exit 1
+            }
+          }
+
+          git checkout -- src-tauri/Cargo.lock
+
+      - name: Upload MSI
+        uses: actions/upload-artifact@v6
+        with:
+          name: SierEdu-Windows
+          path: output/windows/SierEdu_x64.msi
+          retention-days: 7
+
+      - name: Rust cache store
+        uses: actions/cache/save@v4.2.0
+        if: steps.cache_store.outputs.cache-hit != 'true'
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            src-tauri/target/
+          key: ${{ runner.os }}-cargo-pake-${{ hashFiles('**/Cargo.lock') }}
